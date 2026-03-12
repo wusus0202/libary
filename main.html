@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>3D 太陽系模型</title>
+    <style>
+        body { margin: 0; background-color: #1a1a2e; overflow: hidden; }
+        canvas { display: block; }
+        #info {
+            position: absolute; top: 10px; left: 10px;
+            color: white; font-family: "Microsoft JhengHei", Arial, sans-serif;
+            pointer-events: none; text-shadow: 1px 1px 4px black;
+            background: rgba(0,0,0,0.4); padding: 15px; border-radius: 8px;
+        }
+        h2 { margin: 0 0 10px 0; font-size: 24px; color: #FFD700; }
+        p { margin: 5px 0; font-size: 14px; opacity: 0.9; }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h2>3D太陽系八大行星模型</h2>
+        <p>操作：左鍵旋轉 | 滾輪縮放 | 右鍵平移</p>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- 1. 初始化場景 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x101025); 
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        camera.position.set(0, 120, 300);
+        controls.update();
+
+        // --- 2. 燈光系統 ---
+        const sunLight = new THREE.PointLight(0xffffff, 2500, 4000); 
+        scene.add(sunLight);
+        const ambientLight = new THREE.AmbientLight(0x777777); 
+        scene.add(ambientLight);
+
+        // --- 3. 太陽 ---
+        const sunGeo = new THREE.SphereGeometry(15, 32, 32);
+        const sunMat = new THREE.MeshBasicMaterial({ color: 0xFFD700 });
+        const sun = new THREE.Mesh(sunGeo, sunMat);
+        scene.add(sun);
+
+        // --- 4. 行星配置 (放大清晰版) ---
+        const planetsData = [
+            { name: "水星", color: 0xAAAAAA, size: 2.2, dist: 45, rev: 0.04, rot: 0.01 },
+            { name: "金星", color: 0xE3BB76, size: 3.8, dist: 65, rev: 0.015, rot: 0.005 },
+            { name: "地球", color: 0x2233FF, size: 4.0, dist: 85, rev: 0.01, rot: 0.02, hasMoon: true },
+            { name: "火星", color: 0xFF5533, size: 2.8, dist: 105, rev: 0.008, rot: 0.02 },
+            { name: "木星", color: 0xD39C7E, size: 11.0, dist: 170, rev: 0.004, rot: 0.04 },
+            { name: "土星", color: 0xC5AB6E, size: 9.5, dist: 230, rev: 0.002, rot: 0.035, hasRing: true },
+            { name: "天王星", color: 0xBBE1E4, size: 6.5, dist: 290, rev: 0.0015, rot: 0.02 },
+            { name: "海王星", color: 0x6081FF, size: 6.5, dist: 340, rev: 0.001, rot: 0.02 }
+        ];
+
+        const planets = [];
+        planetsData.forEach(data => {
+            const orbitGroup = new THREE.Group();
+            scene.add(orbitGroup);
+
+            const mesh = new THREE.Mesh(
+                new THREE.SphereGeometry(data.size, 32, 32),
+                new THREE.MeshStandardMaterial({ color: data.color, roughness: 0.5 })
+            );
+            mesh.position.x = data.dist;
+            orbitGroup.add(mesh);
+
+            // 軌道線
+            const trackGeo = new THREE.RingGeometry(data.dist - 0.2, data.dist + 0.2, 128);
+            const trackMat = new THREE.MeshBasicMaterial({ color: 0x333344, side: THREE.DoubleSide });
+            const track = new THREE.Mesh(trackGeo, trackMat);
+            track.rotation.x = Math.PI / 2;
+            scene.add(track);
+
+            // 土星環
+            if (data.hasRing) {
+                const ring = new THREE.Mesh(
+                    new THREE.RingGeometry(data.size + 2, data.size + 9, 64),
+                    new THREE.MeshStandardMaterial({ color: 0x888888, side: THREE.DoubleSide, transparent: true, opacity: 0.6 })
+                );
+                ring.rotation.x = Math.PI / 2.5;
+                mesh.add(ring);
+            }
+
+            // 月球
+            let moonOrbit;
+            if (data.hasMoon) {
+                moonOrbit = new THREE.Group();
+                mesh.add(moonOrbit);
+                const moon = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.9, 16, 16),
+                    new THREE.MeshStandardMaterial({ color: 0xAAAAAA })
+                );
+                moon.position.x = 7;
+                moonOrbit.add(moon);
+            }
+            planets.push({ orbitGroup, mesh, data, moonOrbit });
+        });
+
+        // --- 5. 帶狀區域 (小行星帶與柯伊伯帶) ---
+        function createBelt(count, minDist, maxDist, color, yRange, dotSize) {
+            const positions = new Float32Array(count * 3);
+            for (let i = 0; i < count; i++) {
+                const dist = minDist + Math.random() * (maxDist - minDist);
+                const angle = Math.random() * Math.PI * 2;
+                positions[i * 3] = Math.cos(angle) * dist;
+                positions[i * 3 + 1] = (Math.random() - 0.5) * yRange;
+                positions[i * 3 + 2] = Math.sin(angle) * dist;
+            }
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const mat = new THREE.PointsMaterial({ color: color, size: dotSize });
+            return new THREE.Points(geo, mat);
+        }
+
+        const asteroidBelt = createBelt(2500, 125, 150, 0x888888, 5, 0.5);
+        scene.add(asteroidBelt);
+
+        const kuiperBelt = createBelt(3500, 380, 550, 0x556688, 15, 0.6);
+        scene.add(kuiperBelt);
+
+        // --- 6. 動畫迴圈 ---
+        function animate() {
+            requestAnimationFrame(animate);
+            sun.rotation.y += 0.002;
+            planets.forEach(p => {
+                p.orbitGroup.rotation.y += p.data.rev;
+                p.mesh.rotation.y += p.data.rot;
+                if (p.moonOrbit) p.moonOrbit.rotation.y += 0.05;
+            });
+            asteroidBelt.rotation.y += 0.0003;
+            kuiperBelt.rotation.y += 0.0001;
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        animate();
+    </script>
+</body>
+</html>
+
